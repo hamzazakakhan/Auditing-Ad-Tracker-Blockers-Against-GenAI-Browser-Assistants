@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Pre-commit safeguard (Phase 8). Installed to .git/hooks/pre-commit by tools/install-hooks.sh.
+# 1) Hard-block any staged PRIVATE findings file (defence in depth beyond .gitignore).
+# 2) Run gitleaks over the staged diff; abort the commit if any secret is detected.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GITLEAKS="$REPO_ROOT/tools/bin/gitleaks"
+
+# --- 1. Never allow the private register / evidence to be committed ---
+blocked="$(git diff --cached --name-only | grep -E '^findings/(SECRETS_REGISTER\.md|evidence/)' || true)"
+if [ -n "$blocked" ]; then
+  echo "BLOCKED: attempt to commit PRIVATE findings files:" >&2
+  echo "$blocked" >&2
+  echo "These must never be committed. Unstage them (git restore --staged <file>)." >&2
+  exit 1
+fi
+
+# --- 2. gitleaks on staged changes ---
+if [ ! -x "$GITLEAKS" ]; then
+  echo "WARNING: gitleaks not found at $GITLEAKS — install it (tools/) before committing." >&2
+  exit 1
+fi
+"$GITLEAKS" git --staged --no-banner --redact "$REPO_ROOT"
+echo "gitleaks: no secrets in staged changes."
